@@ -12,7 +12,7 @@ import pypdf
 import random
 import logging
 import itertools
-import faiss
+# import faiss
 import pandas as pd
 from typing import Dict, List
 from json import JSONDecodeError
@@ -52,7 +52,7 @@ def generate_eval(text, chunk, logger):
     starting_index = random.randint(0, num_of_chars-chunk)
     sub_sequence = text[starting_index:starting_index+chunk]
     # Set up QAGenerationChain chain using GPT 3.5 as default
-    chain = QAGenerationChain.from_llm(ChatOpenAI(temperature=0))
+    chain = QAGenerationChain.from_llm(ChatOpenAI(temperature=0)) # TODO: only ChatOpenAI chain is being used
     eval_set = []
     # Catch any QA generation errors and re-try until QA pair is generated
     awaiting_answer = True
@@ -177,7 +177,7 @@ def make_chain(llm, retriever, retriever_type, model):
     return qa_chain
 
 
-def grade_model_answer(predicted_dataset, predictions, grade_answer_prompt, logger):
+def grade_model_answer(model, predicted_dataset, predictions, grade_answer_prompt, logger):
     """
     Grades the answer based on ground truth and model predictions.
     @param predicted_dataset: A list of dictionaries containing ground truth questions and answers.
@@ -197,8 +197,10 @@ def grade_model_answer(predicted_dataset, predictions, grade_answer_prompt, logg
     else:
         prompt = GRADE_ANSWER_PROMPT
 
-    # Note: GPT-4 grader is advised by OAI 
-    eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name="gpt-4", temperature=0),
+    # Note: GPT-4 grader is advised by OAI
+    # changing model from gpt-4 to gpt-3.5-turbo
+
+    eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name=model, temperature=0),
                                       prompt=prompt)
     graded_outputs = eval_chain.evaluate(predicted_dataset,
                                          predictions,
@@ -207,7 +209,7 @@ def grade_model_answer(predicted_dataset, predictions, grade_answer_prompt, logg
     return graded_outputs
 
 
-def grade_model_retrieval(gt_dataset, predictions, grade_docs_prompt, logger):
+def grade_model_retrieval(model_name, gt_dataset, predictions, grade_docs_prompt, logger):
     """
     Grades the relevance of retrieved documents based on ground truth and model predictions.
     @param gt_dataset: list of dictionaries containing ground truth questions and answers.
@@ -223,7 +225,8 @@ def grade_model_retrieval(gt_dataset, predictions, grade_docs_prompt, logger):
         prompt = GRADE_DOCS_PROMPT
 
     # Note: GPT-4 grader is advised by OAI
-    eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name="gpt-4", temperature=0),
+    # TODO: need to change model name here
+    eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name=model_name, temperature=0),
                                       prompt=prompt)
     graded_outputs = eval_chain.evaluate(gt_dataset,
                                          predictions,
@@ -232,7 +235,7 @@ def grade_model_retrieval(gt_dataset, predictions, grade_docs_prompt, logger):
     return graded_outputs
 
 
-def run_eval(chain, retriever, eval_qa_pair, grade_prompt, retriever_type, num_neighbors, text, logger):
+def run_eval(model, chain, retriever, eval_qa_pair, grade_prompt, retriever_type, num_neighbors, text, logger):
     """
     Runs evaluation on a model's performance on a given evaluation dataset.
     @param chain: Model chain used for answering questions
@@ -286,9 +289,9 @@ def run_eval(chain, retriever, eval_qa_pair, grade_prompt, retriever_type, num_n
 
     # Grade
     graded_answers = grade_model_answer(
-        gt_dataset, predictions, grade_prompt, logger)
+        model, gt_dataset, predictions, grade_prompt, logger)
     graded_retrieval = grade_model_retrieval(
-        gt_dataset, retrieved_docs, grade_prompt, logger)
+        model, gt_dataset, retrieved_docs, grade_prompt, logger)
     return graded_answers, graded_retrieval, latency, predictions
 
 load_dotenv()
@@ -390,7 +393,7 @@ def run_evaluator(
         if i < len(test_dataset):
             eval_pair = test_dataset[i]
         else:
-            eval_pair = generate_eval(text, 3000, logger)
+            eval_pair = generate_eval(text, 3000, logger) # TODO: chunk size is hardcoded at the moment
             if len(eval_pair) == 0:
                 # Error in eval generation
                 continue
@@ -400,7 +403,7 @@ def run_evaluator(
 
         # Run eval
         graded_answers, graded_retrieval, latency, predictions = run_eval(
-            qa_chain, retriever, eval_pair, grade_prompt, retriever_type, num_neighbors, text, logger)
+            model_version, qa_chain, retriever, eval_pair, grade_prompt, retriever_type, num_neighbors, text, logger)
 
         # Assemble output
         d = pd.DataFrame(predictions)
