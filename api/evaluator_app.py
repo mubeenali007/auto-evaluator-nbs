@@ -35,7 +35,15 @@ from fastapi import FastAPI, File, UploadFile, Form
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chains.question_answering import load_qa_chain
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
-from text_utils import GRADE_DOCS_PROMPT, GRADE_ANSWER_PROMPT, GRADE_DOCS_PROMPT_FAST, GRADE_ANSWER_PROMPT_FAST, GRADE_ANSWER_PROMPT_BIAS_CHECK, GRADE_ANSWER_PROMPT_OPENAI, QA_CHAIN_PROMPT, QA_CHAIN_PROMPT_LLAMA
+from text_utils import GRADE_DOCS_PROMPT, GRADE_ANSWER_PROMPT, GRADE_DOCS_PROMPT_FAST, GRADE_ANSWER_PROMPT_FAST, \
+    GRADE_ANSWER_PROMPT_BIAS_CHECK, GRADE_ANSWER_PROMPT_OPENAI, QA_CHAIN_PROMPT, QA_CHAIN_PROMPT_LLAMA
+from langchain.embeddings import HuggingFaceEmbeddings, SentenceTransformerEmbeddings
+from sentence_transformers import SentenceTransformer
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import Milvus
+from langchain.document_loaders import TextLoader
+
 
 def generate_eval(text, chunk, logger):
     """
@@ -49,10 +57,10 @@ def generate_eval(text, chunk, logger):
     logger.info("`Generating eval QA pair ...`")
     # Generate random starting index in the doc to draw question from
     num_of_chars = len(text)
-    starting_index = random.randint(0, num_of_chars-chunk)
-    sub_sequence = text[starting_index:starting_index+chunk]
+    starting_index = random.randint(0, num_of_chars - chunk)
+    sub_sequence = text[starting_index:starting_index + chunk]
     # Set up QAGenerationChain chain using GPT 3.5 as default
-    chain = QAGenerationChain.from_llm(ChatOpenAI(temperature=0)) # TODO: only ChatOpenAI chain is being used
+    chain = QAGenerationChain.from_llm(ChatOpenAI(temperature=0))  # TODO: only ChatOpenAI chain is being used
     eval_set = []
     # Catch any QA generation errors and re-try until QA pair is generated
     awaiting_answer = True
@@ -63,8 +71,8 @@ def generate_eval(text, chunk, logger):
             awaiting_answer = False
         except JSONDecodeError:
             logger.error("Error on question")
-            starting_index = random.randint(0, num_of_chars-chunk)
-            sub_sequence = text[starting_index:starting_index+chunk]
+            starting_index = random.randint(0, num_of_chars - chunk)
+            sub_sequence = text[starting_index:starting_index + chunk]
     eval_pair = list(itertools.chain.from_iterable(eval_set))
     return eval_pair
 
@@ -104,15 +112,16 @@ def make_llm(model):
     elif model == "anthropic":
         llm = Anthropic(temperature=0)
     elif model == "Anthropic-100k":
-        llm = Anthropic(model="claude-v1-100k",temperature=0)
+        llm = Anthropic(model="claude-v1-100k", temperature=0)
     elif model == "vicuna-13b":
         llm = Replicate(model="replicate/vicuna-13b:e6d469c2b11008bb0e446c3e9629232f9674581224536851272c54871f84076e",
-                input={"temperature": 0.75, "max_length": 3000, "top_p":0.25})
+                        input={"temperature": 0.75, "max_length": 3000, "top_p": 0.25})
     elif model == "mosaic":
-        llm = MosaicML(inject_instruction_format=True,model_kwargs={'do_sample': False, 'max_length': 3000})
+        llm = MosaicML(inject_instruction_format=True, model_kwargs={'do_sample': False, 'max_length': 3000})
     return llm
 
-def make_retriever(splits, retriever_type, embeddings, num_neighbors, llm, logger):
+
+def make_retriever(splits, retriever_type, embeddings, num_neighbors, llm, vector_store, logger):
     """
     Make document retriever
     @param splits: list of str splits
@@ -126,29 +135,38 @@ def make_retriever(splits, retriever_type, embeddings, num_neighbors, llm, logge
 
     logger.info("`Making retriever ...`")
     # Set embeddings
-    if embeddings == "OpenAI":
-        embd = OpenAIEmbeddings()
-    # Note: Still WIP (can't be selected by user yet)
-    elif embeddings == "LlamaCppEmbeddings":
-        embd = LlamaCppEmbeddings(model="replicate/vicuna-13b:e6d469c2b11008bb0e446c3e9629232f9674581224536851272c54871f84076e")
-    # Note: Test
-    elif embeddings == "Mosaic":
-        embd = MosaicMLInstructorEmbeddings(query_instruction="Represent the query for retrieval: ")
+    if embeddings == "text-embedding-ada-002":
+        embd = OpenAIEmbeddings(model="text-embedding-ada-002")
+    elif embeddings == "all-MiniLM-L6-v2":
+        # embd = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embd = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+    elif embeddings == "all-mpnet-base-v2":
+        # embd = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+        embd = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+    elif embeddings == "multi-qa-distilbert-cos-v1":
+        embd = HuggingFaceEmbeddings(model_name="sentence-transformers/multi-qa-distilbert-cos-v1")
 
     # Select retriever
     if retriever_type == "similarity-search":
-        vectorstore = FAISS.from_texts(splits, embd)
+        if vector_store == "Built-in":
+            vectorstore = FAISS.from_texts(splits, embd)  # TODO: check vector store init
+        elif vector_store == "Milvus":
+            vectorstore = Milvus.from_texts(splits, embd,
+                                            connection_args={
+                                                "uri": "https://in03-5be18e9c52b3ab7.api.gcp-us-west1.zillizcloud.com",
+                                                "token": "dc3a23800bdc46cc6e68698e87821f43e8bc01d38724874a75883582e96fe0cb0e999b6b4aedb0ab3328bf2b07ba24b67c6bc8d1"},
+                                            )
         retriever = vectorstore.as_retriever(k=num_neighbors)
     elif retriever_type == "SVM":
         retriever = SVMRetriever.from_texts(splits, embd)
     elif retriever_type == "TF-IDF":
         retriever = TFIDFRetriever.from_texts(splits)
     elif retriever_type == "Anthropic-100k":
-         retriever = llm
+        retriever = llm
     return retriever
 
-def make_chain(llm, retriever, retriever_type, model):
 
+def make_chain(llm, retriever, retriever_type, model):
     """
     Make retrieval chain
     @param llm: model
@@ -162,12 +180,12 @@ def make_chain(llm, retriever, retriever_type, model):
         # Note: Better answer quality using default prompt 
         # chain_type_kwargs = {"prompt": QA_CHAIN_PROMPT_LLAMA}
         chain_type_kwargs = {"prompt": QA_CHAIN_PROMPT}
-    else: 
+    else:
         chain_type_kwargs = {"prompt": QA_CHAIN_PROMPT}
 
     # Select model 
     if retriever_type == "Anthropic-100k":
-        qa_chain = load_qa_chain(llm,chain_type="stuff",prompt=QA_CHAIN_PROMPT)
+        qa_chain = load_qa_chain(llm, chain_type="stuff", prompt=QA_CHAIN_PROMPT)
     else:
         qa_chain = RetrievalQA.from_chain_type(llm,
                                                chain_type="stuff",
@@ -261,11 +279,11 @@ def run_eval(model, chain, retriever, eval_qa_pair, grade_prompt, retriever_type
     # Get answer and log latency
     start_time = time.time()
     if retriever_type == "Anthropic-100k":
-        docs=[Document(page_content=text)]
-        answer = chain.run(input_documents=docs,question=eval_qa_pair["question"])
+        docs = [Document(page_content=text)]
+        answer = chain.run(input_documents=docs, question=eval_qa_pair["question"])
         predictions.append(
             {"question": eval_qa_pair["question"], "answer": eval_qa_pair["answer"], "result": answer})
-    else :
+    else:
         predictions.append(chain(eval_qa_pair))
     gt_dataset.append(eval_qa_pair)
     end_time = time.time()
@@ -279,8 +297,8 @@ def run_eval(model, chain, retriever, eval_qa_pair, grade_prompt, retriever_type
     else:
         docs = retriever.get_relevant_documents(eval_qa_pair["question"])
         for i, doc in enumerate(docs):
-            retrieved_doc_text += "Doc %s: " % str(i+1) + \
-                doc.page_content + " "
+            retrieved_doc_text += "Doc %s: " % str(i + 1) + \
+                                  doc.page_content + " "
 
     # Log
     retrieved = {"question": eval_qa_pair["question"],
@@ -294,12 +312,13 @@ def run_eval(model, chain, retriever, eval_qa_pair, grade_prompt, retriever_type
         model, gt_dataset, retrieved_docs, grade_prompt, logger)
     return graded_answers, graded_retrieval, latency, predictions
 
+
 load_dotenv()
 
 if os.environ.get("ENVIRONMENT") != "development":
     sentry_sdk.init(
-    dsn="https://065aa152c4de4e14af9f9e7335c8eae4@o4505106202820608.ingest.sentry.io/4505106207735808",
-    traces_sample_rate=1.0,
+        dsn="https://065aa152c4de4e14af9f9e7335c8eae4@o4505106202820608.ingest.sentry.io/4505106207735808",
+        traces_sample_rate=1.0,
     )
 
 app = FastAPI()
@@ -328,19 +347,19 @@ async def root():
 
 
 def run_evaluator(
-    files,
-    num_eval_questions,
-    chunk_chars,
-    overlap,
-    split_method,
-    retriever_type,
-    embeddings,
-    model_version,
-    grade_prompt,
-    num_neighbors,
-    test_dataset
+        files,
+        num_eval_questions,
+        chunk_chars,
+        overlap,
+        split_method,
+        retriever_type,
+        embeddings,
+        model_version,
+        grade_prompt,
+        num_neighbors,
+        test_dataset,
+        vector_store
 ):
-
     # Set up logging
     logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
     logger = logging.getLogger(__name__)
@@ -382,7 +401,7 @@ def run_evaluator(
 
     logger.info("Make retriever")
     retriever = make_retriever(
-        splits, retriever_type, embeddings, num_neighbors, llm, logger)
+        splits, retriever_type, embeddings, num_neighbors, llm, vector_store, logger)
 
     logger.info("Make chain")
     qa_chain = make_chain(llm, retriever, retriever_type, model_version)
@@ -393,7 +412,7 @@ def run_evaluator(
         if i < len(test_dataset):
             eval_pair = test_dataset[i]
         else:
-            eval_pair = generate_eval(text, 3000, logger) # TODO: chunk size is hardcoded at the moment
+            eval_pair = generate_eval(text, 3000, logger)  # TODO: chunk size is hardcoded at the moment
             if len(eval_pair) == 0:
                 # Error in eval generation
                 continue
@@ -420,7 +439,7 @@ def run_evaluator(
         # Convert dataframe to dict
         d_dict = d.to_dict('records')
         if len(d_dict) == 1:
-            yield json.dumps({"data":  d_dict[0]})
+            yield json.dumps({"data": d_dict[0]})
         else:
             logger.warn(
                 "A QA pair was not evaluated correctly. Skipping this pair.")
@@ -428,18 +447,22 @@ def run_evaluator(
 
 @app.post("/evaluator-stream")
 async def create_response(
-    files: List[UploadFile] = File(...),
-    num_eval_questions: int = Form(5),
-    chunk_chars: int = Form(1000),
-    overlap: int = Form(100),
-    split_method: str = Form("RecursiveTextSplitter"),
-    retriever_type: str = Form("similarity-search"),
-    embeddings: str = Form("OpenAI"),
-    model_version: str = Form("gpt-3.5-turbo"),
-    grade_prompt: str = Form("Fast"),
-    num_neighbors: int = Form(3),
-    test_dataset: str = Form("[]"),
+        files: List[UploadFile] = File(...),
+        num_eval_questions: int = Form(5),
+        chunk_chars: int = Form(200),
+        overlap: int = Form(100),
+        split_method: str = Form("RecursiveTextSplitter"),
+        retriever_type: str = Form("similarity-search"),
+        embeddings: str = Form("text-embedding-ada-002"),
+        model_version: str = Form("gpt-3.5-turbo"),
+        grade_prompt: str = Form("Fast"),
+        vector_store: str = Form("Built-in"),
+        num_neighbors: int = Form(3),
+        test_dataset: str = Form("[]"),
 ):
     test_dataset = json.loads(test_dataset)
     return EventSourceResponse(run_evaluator(files, num_eval_questions, chunk_chars,
-                                             overlap, split_method, retriever_type, embeddings, model_version, grade_prompt, num_neighbors, test_dataset), headers={"Content-Type": "text/event-stream", "Connection": "keep-alive", "Cache-Control": "no-cache"})
+                                             overlap, split_method, retriever_type, embeddings, model_version,
+                                             grade_prompt, num_neighbors, test_dataset, vector_store),
+                               headers={"Content-Type": "text/event-stream", "Connection": "keep-alive",
+                                        "Cache-Control": "no-cache"})

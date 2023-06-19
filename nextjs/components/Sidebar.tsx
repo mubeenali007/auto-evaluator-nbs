@@ -52,13 +52,14 @@ const Sidebar = ({ form }: { form: Form }) => {
                   {...field}
                   labelTransition="skew-down"
                   marks={[
+                      { value: 200, label: "200"},
                     { value: 500, label: "500" },
                     { value: 1000, label: "1000" },
                     { value: 1500, label: "1500" },
                     { value: 2000, label: "2000" },
                   ]}
                   max={2000}
-                  min={500}
+                  min={200}
                   step={100}
                 />
               )}
@@ -136,10 +137,21 @@ const Sidebar = ({ form }: { form: Form }) => {
                 <Select
                   {...field}
                   data={[
-                    {
-                      label: "OpenAI",
-                      value: "OpenAI",
-                    },
+                      {
+                          label: "text-embedding-ada-002",
+                          value: "text-embedding-ada-002",
+                      },
+                      {
+                          label: "all-MiniLM-L6-v2",
+                          value: "all-MiniLM-L6-v2",
+                      },
+                      {
+                          label: "all-mpnet-base-v2",
+                          value: "all-mpnet-base-v2",
+                      }, {
+                          label: "multi-qa-distilbert-cos-v1",
+                          value: "multi-qa-distilbert-cos-v1",
+                      }
                   ]}
                 />
               )}
@@ -187,12 +199,12 @@ const Sidebar = ({ form }: { form: Form }) => {
                   {...field}
                   labelTransition="skew-down"
                   marks={[
-                    { value: 3, label: "3" },
-                    { value: 4, label: "4" },
-                    { value: 5, label: "5" },
+                      {value: 1, label: "1"},
+                      {value: 5, label: "5"},
+                      {value: 10, label: "10"}
                   ]}
-                  max={5}
-                  min={3}
+                  max={10}
+                  min={1}
                   step={1}
                 />
               )}
@@ -222,6 +234,28 @@ const Sidebar = ({ form }: { form: Form }) => {
                     {
                       label: "OpenAI grading prompt",
                       value: "OpenAI grading prompt",
+                    },
+                  ]}
+                />
+              )}
+            />
+          </div>
+            <div>
+            <Text fz="md">Vector Store</Text>
+            <Controller
+              name="vectorStore"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  {...field}
+                  data={[
+                    {
+                      label: "Built-in",
+                      value: "Built-in",
+                    },
+                    {
+                      label: "Milvus",
+                      value: "Milvus",
                     },
                   ]}
                 />

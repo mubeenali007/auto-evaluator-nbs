@@ -161,6 +161,7 @@ const Playground = ({ form }: { form: Form }) => {
     formData.append("embeddings", data.embeddingAlgorithm);
     formData.append("model_version", data.model);
     formData.append("grade_prompt", data.gradingPrompt);
+    formData.append("vector_store", data.vectorStore);
     formData.append("num_neighbors", data.numNeighbors.toString());
     formData.append("test_dataset", JSON.stringify(testDataset));
 
@@ -260,6 +261,7 @@ const Playground = ({ form }: { form: Form }) => {
       embeddingAlgorithm: data.embeddingAlgorithm,
       model: data.model,
       gradingPrompt: data.gradingPrompt,
+      vectorStore: data.vectorStore,
       numNeighbors: data.numNeighbors,
       avgRelevancyScore,
       avgAnswerScore,

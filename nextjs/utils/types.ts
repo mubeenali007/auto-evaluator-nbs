@@ -9,6 +9,7 @@ export type FormValues = {
   model: string;
   retriever: string;
   gradingPrompt: string;
+  vectorStore: string;
   numNeighbors: number;
   files: any[];
 };
@@ -38,6 +39,7 @@ export type Experiment = {
   embeddingAlgorithm: string;
   model: string;
   gradingPrompt: string;
+  vectorStore: string;
   numNeighbors: number;
   avgRelevancyScore: number;
   avgAnswerScore: number;
